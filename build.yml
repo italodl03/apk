@@ -1,0 +1,131 @@
+name: Gerar APK casca
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Criar projeto Android (WebView)
+        run: |
+          mkdir -p casca/app/src/main/java/com/gerador/app
+          mkdir -p casca/app/src/main/assets/www
+          cd casca
+
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
+          }
+          dependencyResolutionManagement {
+              repositories { google(); mavenCentral() }
+          }
+          rootProject.name = "casca"
+          include ':app'
+          EOF
+
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.5.2' apply false
+          }
+          EOF
+
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+          android {
+              namespace 'com.gerador.app'
+              compileSdk 34
+              defaultConfig {
+                  applicationId 'com.gerador.app'
+                  minSdk 21
+                  targetSdk 28
+                  versionCode 1
+                  versionName '1.0'
+              }
+              lint {
+                  abortOnError false
+                  checkReleaseBuilds false
+              }
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <application
+                  android:label="App"
+                  android:usesCleartextTraffic="true"
+                  android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:configChanges="orientation|screenSize|keyboardHidden">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/java/com/gerador/app/MainActivity.java <<'EOF'
+          package com.gerador.app;
+
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+
+          public class MainActivity extends Activity {
+              private WebView w;
+
+              @Override
+              protected void onCreate(Bundle b) {
+                  super.onCreate(b);
+                  w = new WebView(this);
+                  WebSettings s = w.getSettings();
+                  s.setJavaScriptEnabled(true);
+                  s.setDomStorageEnabled(true);
+                  s.setAllowFileAccess(true);
+                  s.setMediaPlaybackRequiresUserGesture(false);
+                  w.setWebViewClient(new WebViewClient());
+                  w.setWebChromeClient(new WebChromeClient());
+                  setContentView(w);
+                  w.loadUrl("file:///android_asset/www/index.html");
+              }
+
+              @Override
+              public void onBackPressed() {
+                  if (w.canGoBack()) w.goBack();
+                  else super.onBackPressed();
+              }
+          }
+          EOF
+
+          cat > app/src/main/assets/www/index.html <<'EOF'
+          <!doctype html><html><body><h1>Casca vazia</h1></body></html>
+          EOF
+
+      - name: Compilar
+        working-directory: casca
+        run: gradle assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: casca-apk
+          path: casca/app/build/outputs/apk/debug/app-debug.apk
